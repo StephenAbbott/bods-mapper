@@ -1,0 +1,27 @@
+[project]
+name = "bods-mapper"
+version = "0.1.0"
+description = "Companies House PSC data → Beneficial Ownership Data Standard (BODS) v0.4"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Stephen Abbott Pugh" }]
+dependencies = [
+    "pycountry>=23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "libcovebods>=0.16",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bods_mapper"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
