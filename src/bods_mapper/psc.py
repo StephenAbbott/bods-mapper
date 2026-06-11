@@ -62,7 +62,7 @@ def _addresses_from(block: dict[str, Any] | None, addr_type: str) -> list[dict[s
     return [_address(addr_type, joined, block.get("country", ""))] if joined else []
 
 
-def _individual_party(source_id: str, number: str, data: dict[str, Any], url: str) -> dict[str, Any]:
+def _individual_party(source_id: str, number: str, data: dict[str, Any], url: str, pid: str) -> dict[str, Any]:
     ne = data.get("name_elements") or {}
     full_name = data.get("name") or " ".join(
         [ne.get("forename", ""), ne.get("middle_name", ""), ne.get("surname", "")]
@@ -74,10 +74,9 @@ def _individual_party(source_id: str, number: str, data: dict[str, Any], url: st
         birth_date = f"{dob['year']:04d}-{dob['month']:02d}" if "month" in dob else f"{dob['year']:04d}"
 
     nationalities = [{"name": data["nationality"]}] if data.get("nationality") else []
-    etag = data.get("etag") or full_name
     return make_person_statement(
         source_id=source_id,
-        local_id=f"{number}:psc:{etag}",
+        local_id=f"{number}:psc:{pid}",
         full_name=full_name or "Unknown PSC",
         person_type="knownPerson",
         nationalities=nationalities,
@@ -87,35 +86,57 @@ def _individual_party(source_id: str, number: str, data: dict[str, Any], url: st
     )
 
 
-def _corporate_party(source_id: str, number: str, data: dict[str, Any], url: str) -> dict[str, Any]:
+def _corporate_party(source_id: str, number: str, data: dict[str, Any], url: str, pid: str) -> dict[str, Any]:
     ident = data.get("identification") or {}
     identifiers = []
     reg_no = (ident.get("registration_number") or "").strip()
     if reg_no:
         identifiers.append({"id": reg_no, "scheme": "unknown", "schemeName": ident.get("place_registered", "")})
-    etag = data.get("etag") or data.get("name", "")
     return make_entity_statement(
         source_id=source_id,
-        local_id=f"{number}:psc:{etag}",
+        local_id=f"{number}:psc:{pid}",
         name=data.get("name") or "Corporate PSC",
         identifiers=identifiers,
         source_url=url,
     )
 
 
-def _super_secure_party(source_id: str, number: str, data: dict[str, Any], url: str) -> dict[str, Any]:
+def _super_secure_party(source_id: str, number: str, data: dict[str, Any], url: str, pid: str) -> dict[str, Any]:
     # TODO: carry the official super_secure_description text (see opencheck ticket).
     return make_person_statement(
         source_id=source_id,
-        local_id=f"{number}:anon:{data.get('etag', '0')}",
+        local_id=f"{number}:anon:{pid}",
         full_name=data.get("name", "Anonymous PSC"),
         person_type="anonymousPerson",
         source_url=url,
     )
 
 
-def map_psc_event(event: dict[str, Any], *, source_id: str = "companies_house") -> BODSBundle:
-    """Map one CH PSC stream event to a BODS bundle (entity + party + relationship)."""
+def map_psc_event(
+    event: dict[str, Any],
+    *,
+    source_id: str = "companies_house",
+    stable_psc_id: str | None = None,
+    record_status: str | None = None,
+    replaces_statement_id: str | None = None,
+    end_date: str | None = None,
+) -> BODSBundle:
+    """Map one CH PSC stream event to a BODS bundle (entity + party + relationship).
+
+    Lifecycle (driven by the calling service's state tracker, since the stream
+    itself carries no new/updated/closed):
+
+    * ``stable_psc_id`` — a stable identity for this PSC (e.g. the stream
+      ``resource_id``). When given, the party's ``recordId`` is derived from it
+      rather than the per-update ``etag``, so a PSC keeps one ``recordId`` across
+      its lifecycle. Falls back to ``etag`` for one-shot mapping.
+    * ``record_status`` — override the relationship's status ("updated" on a
+      re-sighting, "closed" on a deletion). Defaults to "closed" when the event
+      carries ``ceased_on``, else "new".
+    * ``replaces_statement_id`` — the prior statement this one supersedes.
+    * ``end_date`` — interest end date for a deletion-driven close (when there's
+      no ``ceased_on`` date).
+    """
     result = BODSBundle()
     data = event.get("data")
     number = company_number_from_uri(event.get("resource_uri", ""))
@@ -123,6 +144,7 @@ def map_psc_event(event: dict[str, Any], *, source_id: str = "companies_house") 
         return result  # deleted / unmappable: caller closes prior record from last-state map
 
     url = _COMPANY_URL.format(number=number)
+    pid = stable_psc_id or data.get("etag") or data.get("name") or "0"
     # The PSC payload carries no company name; enrichment (a REST profile lookup)
     # is the calling service's choice. Fall back to a stable placeholder.
     entity = make_entity_statement(
@@ -138,13 +160,13 @@ def map_psc_event(event: dict[str, Any], *, source_id: str = "companies_house") 
 
     kind = (data.get("kind") or "").lower()
     if "corporate-entity" in kind or "legal-person" in kind:
-        party = _corporate_party(source_id, number, data, url)
+        party = _corporate_party(source_id, number, data, url, pid)
         party_type = "entity"
     elif "individual" in kind:
-        party = _individual_party(source_id, number, data, url)
+        party = _individual_party(source_id, number, data, url, pid)
         party_type = "person"
     else:
-        party = _super_secure_party(source_id, number, data, url)
+        party = _super_secure_party(source_id, number, data, url, pid)
         party_type = "person"
     result.statements.append(party)
 
@@ -157,9 +179,11 @@ def map_psc_event(event: dict[str, Any], *, source_id: str = "companies_house") 
             interest["beneficialOwnershipOrControl"] = False
 
     ceased_on = data.get("ceased_on")
-    if ceased_on:
+    status = record_status or ("closed" if ceased_on else "new")
+    closure_date = end_date or ceased_on
+    if status == "closed" and closure_date:
         for interest in interests:
-            interest["endDate"] = ceased_on
+            interest["endDate"] = closure_date
 
     rel = make_relationship_statement(
         source_id=source_id,
@@ -168,8 +192,9 @@ def map_psc_event(event: dict[str, Any], *, source_id: str = "companies_house") 
         interested_party_statement_id=party["statementId"],
         interests=interests,
         source_url=url,
-        publication_date=(ceased_on or data.get("notified_on") or None),
-        record_status="closed" if ceased_on else "new",
+        publication_date=(closure_date or data.get("notified_on") or None),
+        record_status=status,
+        replaces_statements=[replaces_statement_id] if replaces_statement_id else None,
     )
     result.statements.append(rel)
     return result
