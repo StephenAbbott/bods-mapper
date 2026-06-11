@@ -103,6 +103,20 @@ def test_nominee_ceased_closes_both_relationships():
     assert validate_shape(stmts) == []
 
 
+def test_super_secure_carries_official_descriptor():
+    ev = _event("super-secure-person-with-significant-control", [])
+    ev["data"]["description"] = "super-secure-persons-with-significant-control"
+    stmts = list(map_psc_event(ev))
+    assert validate_shape(stmts) == []
+
+    person = [s for s in stmts if s["recordType"] == "person"][0]
+    assert person["recordDetails"]["personType"] == "anonymousPerson"
+
+    interest = [s for s in stmts if s["recordType"] == "relationship"][0]["recordDetails"]["interests"][0]
+    assert interest["type"] == "unpublishedInterest"
+    assert "restrictions on disclosing" in interest["details"]   # official CH text, not "Anonymous PSC"
+
+
 def test_corporate_psc_is_entity_to_entity():
     ev = _event("corporate-entity-person-with-significant-control", ["voting-rights-75-to-100-percent"])
     ev["data"]["identification"] = {"registration_number": "09999999", "place_registered": "Companies House"}

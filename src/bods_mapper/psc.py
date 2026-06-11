@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .natures import describe_nature, is_nominee, parse_nature
+from .natures import describe_nature, describe_super_secure, is_nominee, parse_nature
 from .statements import (
     BODSBundle,
     make_entity_statement,
@@ -102,13 +102,23 @@ def _corporate_party(source_id: str, number: str, data: dict[str, Any], url: str
 
 
 def _super_secure_party(source_id: str, number: str, data: dict[str, Any], url: str, pid: str) -> dict[str, Any]:
-    # TODO: carry the official super_secure_description text (see opencheck ticket).
+    # A super-secure PSC is known to CH but all particulars are withheld by court
+    # order → anonymousPerson. The official explanation rides on the relationship
+    # interest (see map_psc_event), not on a misleading placeholder name.
     return make_person_statement(
         source_id=source_id,
         local_id=f"{number}:anon:{pid}",
-        full_name=data.get("name", "Anonymous PSC"),
+        full_name="Super-secure person",
         person_type="anonymousPerson",
         source_url=url,
+    )
+
+
+def _super_secure_code(data: dict[str, Any], natures: list[str]) -> str | None:
+    """The CH super-secure code: the PSC's ``description`` field, else a super-
+    secure nature code if one is present."""
+    return data.get("description") or next(
+        (n for n in natures if "super-secure" in (n or "").lower()), None
     )
 
 
@@ -193,9 +203,19 @@ def map_psc_event(
         )
         return result
 
-    interests = [parse_nature(n) for n in natures] or [
-        {"type": "unknownInterest", "directOrIndirect": "unknown", "beneficialOwnershipOrControl": True}
-    ]
+    if "super-secure" in kind:
+        # Particulars are withheld by court order → one `unpublishedInterest`
+        # carrying CH's official explanatory text, not a bare unknownInterest.
+        interests = [{
+            "type": "unpublishedInterest",
+            "directOrIndirect": "unknown",
+            "beneficialOwnershipOrControl": True,
+            "details": describe_super_secure(_super_secure_code(data, natures)),
+        }]
+    else:
+        interests = [parse_nature(n) for n in natures] or [
+            {"type": "unknownInterest", "directOrIndirect": "unknown", "beneficialOwnershipOrControl": True}
+        ]
     if party_type == "entity":
         for interest in interests:
             interest["beneficialOwnershipOrControl"] = False

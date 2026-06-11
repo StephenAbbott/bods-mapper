@@ -7,7 +7,7 @@ bods-stream live demo so the two can't drift apart.
 from __future__ import annotations
 
 from .countries import country_object
-from .natures import describe_nature, parse_nature
+from .natures import describe_nature, describe_super_secure, parse_nature
 from .natures_data import PSC_NATURE_DESCRIPTIONS
 from .psc import company_number_from_uri, map_psc_event
 from .statements import (
@@ -26,6 +26,7 @@ __all__ = [
     "company_number_from_uri",
     "parse_nature",
     "describe_nature",
+    "describe_super_secure",
     "PSC_NATURE_DESCRIPTIONS",
     "country_object",
     "BODSBundle",

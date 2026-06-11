@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .natures_data import describe_nature
+from .natures_data import describe_nature, describe_super_secure
 
 # Prefix -> BODS interestType. Order matters: first startswith() wins.
 _INTEREST_PREFIX = {
@@ -74,4 +74,4 @@ def parse_nature(nature: str) -> dict[str, Any]:
     return entry
 
 
-__all__ = ["parse_nature", "describe_nature", "is_nominee"]
+__all__ = ["parse_nature", "describe_nature", "describe_super_secure", "is_nominee"]
