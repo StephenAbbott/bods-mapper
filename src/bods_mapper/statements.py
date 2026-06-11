@@ -72,15 +72,22 @@ def make_entity_statement(
     dissolution_date: str | None = None,
     addresses: Iterable[dict[str, str]] = (),
     entity_type: str = "registeredEntity",
+    entity_subtype: str | None = None,
+    entity_details: str | None = None,
     source_url: str | None = None,
     source_description: str = "UK Companies House",
     publication_date: str | None = None,
 ) -> dict[str, Any]:
     statement_id = stable_id(source_id, "entity", local_id)
     record_id = statement_id
+    entity_type_obj: dict[str, Any] = {"type": entity_type}
+    if entity_subtype:
+        entity_type_obj["subtype"] = entity_subtype
+    if entity_details:
+        entity_type_obj["details"] = entity_details
     record_details: dict[str, Any] = {
         "isComponent": False,
-        "entityType": {"type": entity_type},
+        "entityType": entity_type_obj,
         "name": name,
         "identifiers": list(identifiers),
     }

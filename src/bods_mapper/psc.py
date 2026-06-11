@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .natures import parse_nature
+from .natures import describe_nature, is_nominee, parse_nature
 from .statements import (
     BODSBundle,
     make_entity_statement,
@@ -171,6 +171,28 @@ def map_psc_event(
     result.statements.append(party)
 
     natures = data.get("natures_of_control") or []
+    ceased_on = data.get("ceased_on")
+    status = record_status or ("closed" if ceased_on else "new")
+    closure_date = end_date or ceased_on
+    publication_date = closure_date or data.get("notified_on") or None
+
+    # Nominee (Registered Overseas Entity) arrangements get the proper BODS model:
+    # a synthetic `arrangement`/`nomination` entity with `nominator` + `nominee`
+    # relationships, not a bare `nominee` interest. The overseas entity (the PSC
+    # `entity`) is the registered owner = nominee; the PSC party is the nominator.
+    # The held asset is UK land, which BODS 0.4 cannot represent (data-standard
+    # issue #752), so the arrangement->asset link is intentionally omitted.
+    nominee_natures = [n for n in natures if is_nominee(n)]
+    if nominee_natures:
+        _add_nominee_arrangement(
+            result, source_id=source_id, number=number, pid=pid, url=url,
+            nominee_party_sid=entity_sid, nominator_party_sid=party["statementId"],
+            descriptor=describe_nature(nominee_natures[0]) or nominee_natures[0],
+            status=status, closure_date=closure_date, publication_date=publication_date,
+            replaces_statement_id=replaces_statement_id,
+        )
+        return result
+
     interests = [parse_nature(n) for n in natures] or [
         {"type": "unknownInterest", "directOrIndirect": "unknown", "beneficialOwnershipOrControl": True}
     ]
@@ -178,9 +200,6 @@ def map_psc_event(
         for interest in interests:
             interest["beneficialOwnershipOrControl"] = False
 
-    ceased_on = data.get("ceased_on")
-    status = record_status or ("closed" if ceased_on else "new")
-    closure_date = end_date or ceased_on
     if status == "closed" and closure_date:
         for interest in interests:
             interest["endDate"] = closure_date
@@ -192,12 +211,87 @@ def map_psc_event(
         interested_party_statement_id=party["statementId"],
         interests=interests,
         source_url=url,
-        publication_date=(closure_date or data.get("notified_on") or None),
+        publication_date=publication_date,
         record_status=status,
         replaces_statements=[replaces_statement_id] if replaces_statement_id else None,
     )
     result.statements.append(rel)
     return result
+
+
+def _add_nominee_arrangement(
+    result: BODSBundle,
+    *,
+    source_id: str,
+    number: str,
+    pid: str,
+    url: str,
+    nominee_party_sid: str,
+    nominator_party_sid: str,
+    descriptor: str,
+    status: str,
+    closure_date: str | None,
+    publication_date: str | None,
+    replaces_statement_id: str | None,
+) -> None:
+    """Append the nomination arrangement entity + nominator/nominee relationships.
+
+    Per the BODS nominee modelling guidance, a nominee fact is an Entity Statement
+    with ``entityType.type = "arrangement"`` / ``subtype = "nomination"`` joined to
+    its parties by relationships whose ``interest.type`` is *only* ``nominator`` or
+    ``nominee``. The CH descriptor is preserved on both ``entityType.details`` and
+    each ``interest.details``.
+    """
+    arrangement = make_entity_statement(
+        source_id=source_id,
+        local_id=f"{number}:nomination:{pid}",
+        name="Nominee arrangement",
+        entity_type="arrangement",
+        entity_subtype="nomination",
+        entity_details=descriptor,
+        source_url=url,
+    )
+    result.statements.append(arrangement)
+    arrangement_sid = arrangement["statementId"]
+
+    def _interest(interest_type: str, is_bo: bool) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "type": interest_type,
+            "directOrIndirect": "direct",
+            "beneficialOwnershipOrControl": is_bo,
+            "details": descriptor,
+        }
+        if status == "closed" and closure_date:
+            entry["endDate"] = closure_date
+        return entry
+
+    # nominee = the registered owner (overseas entity); not the beneficial owner.
+    result.statements.append(
+        make_relationship_statement(
+            source_id=source_id,
+            local_id=f"{number}:nominee:{pid}",
+            subject_statement_id=arrangement_sid,
+            interested_party_statement_id=nominee_party_sid,
+            interests=[_interest("nominee", False)],
+            source_url=url,
+            publication_date=publication_date,
+            record_status=status,
+            replaces_statements=[replaces_statement_id] if replaces_statement_id else None,
+        )
+    )
+    # nominator = the PSC / beneficial owner on whose behalf the nominee holds.
+    result.statements.append(
+        make_relationship_statement(
+            source_id=source_id,
+            local_id=f"{number}:nominator:{pid}",
+            subject_statement_id=arrangement_sid,
+            interested_party_statement_id=nominator_party_sid,
+            interests=[_interest("nominator", True)],
+            source_url=url,
+            publication_date=publication_date,
+            record_status=status,
+        )
+    )
 
 
 __all__ = ["map_psc_event", "company_number_from_uri"]

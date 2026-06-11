@@ -51,6 +51,58 @@ def test_deleted_event_yields_empty_bundle():
     assert len(map_psc_event(ev)) == 0
 
 
+_NOMINEE_CODE = "registered-owner-as-nominee-person-england-wales-registered-overseas-entity"
+
+
+def test_nominee_event_builds_arrangement_not_bare_interest():
+    ev = _event("individual-person-with-significant-control", [_NOMINEE_CODE])
+    stmts = list(map_psc_event(ev))
+
+    # entity (overseas entity) + person (nominator) + arrangement entity + 2 rels
+    assert [s["recordType"] for s in stmts] == [
+        "entity", "person", "entity", "relationship", "relationship"
+    ]
+    assert validate_shape(stmts) == []
+
+    arrangement = stmts[2]
+    assert arrangement["recordDetails"]["entityType"]["type"] == "arrangement"
+    assert arrangement["recordDetails"]["entityType"]["subtype"] == "nomination"
+    assert arrangement["recordDetails"]["entityType"]["details"]  # CH descriptor preserved
+    arrangement_sid = arrangement["statementId"]
+
+    oe_sid = stmts[0]["statementId"]              # overseas entity = nominee
+    nominator_person_sid = stmts[1]["statementId"]
+
+    rels = {r["recordDetails"]["interests"][0]["type"]: r for r in stmts[3:]}
+    assert set(rels) == {"nominee", "nominator"}
+
+    # nominee = the overseas entity; nominator = the PSC person; both point at the arrangement
+    assert rels["nominee"]["recordDetails"]["interestedParty"] == oe_sid
+    assert rels["nominee"]["recordDetails"]["subject"] == arrangement_sid
+    assert rels["nominee"]["recordDetails"]["interests"][0]["beneficialOwnershipOrControl"] is False
+    assert rels["nominator"]["recordDetails"]["interestedParty"] == nominator_person_sid
+    assert rels["nominator"]["recordDetails"]["subject"] == arrangement_sid
+    assert rels["nominator"]["recordDetails"]["interests"][0]["beneficialOwnershipOrControl"] is True
+
+    # the old (wrong) shape — a bare `nominee` interest on a party->company rel — must not appear
+    for r in stmts[3:]:
+        assert r["recordDetails"]["subject"] == arrangement_sid
+
+
+def test_nominee_ceased_closes_both_relationships():
+    ev = _event(
+        "individual-person-with-significant-control", [_NOMINEE_CODE], ceased_on="2024-09-03"
+    )
+    stmts = list(map_psc_event(ev))
+    rels = [s for s in stmts if s["recordType"] == "relationship"]
+    assert len(rels) == 2
+    for r in rels:
+        assert r["recordStatus"] == "closed"
+        assert r["recordDetails"]["interests"][0]["endDate"] == "2024-09-03"
+        assert r["replacesStatements"]
+    assert validate_shape(stmts) == []
+
+
 def test_corporate_psc_is_entity_to_entity():
     ev = _event("corporate-entity-person-with-significant-control", ["voting-rights-75-to-100-percent"])
     ev["data"]["identification"] = {"registration_number": "09999999", "place_registered": "Companies House"}

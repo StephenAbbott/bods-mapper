@@ -1,8 +1,12 @@
 """Companies House ``natures_of_control`` -> BODS v0.4 interest entries.
 
 All 86 official CH codes map to a valid BODS ``interestType`` and carry the
-official short descriptor in ``interest.details``. Nominee codes intentionally
-stay as ``otherInfluenceOrControl`` pending a proper ``arrangement`` model.
+official short descriptor in ``interest.details``. The ``registered-owner-as-
+nominee-*`` (Registered Overseas Entity) codes are handled separately, at the
+event level in ``psc.map_psc_event``, as a proper ``arrangement`` (subtype
+``nomination``) entity with ``nominator``/``nominee`` relationships — see
+``is_nominee``. ``parse_nature`` still maps them to ``otherInfluenceOrControl``
+as a safety net for any caller that bypasses the arrangement path.
 """
 
 from __future__ import annotations
@@ -33,6 +37,17 @@ _INTEREST_PREFIX = {
 
 _SHARE_BAND_RE = re.compile(r"(\d+)-to-(\d+)-percent")
 
+_NOMINEE_MARKER = "registered-owner-as-nominee"
+
+
+def is_nominee(nature: str) -> bool:
+    """True for a CH ``registered-owner-as-nominee-*`` (ROE) nature code.
+
+    These are the only nominee codes CH publishes; they require the BODS
+    ``arrangement``/``nomination`` model rather than a bare ``nominee`` interest.
+    """
+    return _NOMINEE_MARKER in (nature or "").lower()
+
 
 def parse_nature(nature: str) -> dict[str, Any]:
     """Return a BODS ``interests`` entry for one PSC nature-of-control code."""
@@ -59,4 +74,4 @@ def parse_nature(nature: str) -> dict[str, Any]:
     return entry
 
 
-__all__ = ["parse_nature", "describe_nature"]
+__all__ = ["parse_nature", "describe_nature", "is_nominee"]
