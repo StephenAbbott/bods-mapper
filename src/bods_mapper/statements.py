@@ -165,27 +165,24 @@ def make_relationship_statement(
     source_description: str = "UK Companies House",
     publication_date: str | None = None,
     record_status: str = "new",
-    replaces_statements: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Build a relationship statement.
 
     ``recordId`` is derived purely from ``local_id`` so it is stable across the
     record's lifecycle. For non-``new`` lifecycle stages the ``statementId`` is
     varied (status + publication date) so the closed/updated statement is a
-    distinct statement, and ``replacesStatements`` auto-points at the original
-    ``new`` statement unless the caller supplies an explicit list.
+    distinct statement from the original ``new`` one, while the ``recordId`` stays
+    put — which is how BODS 0.4 links a record's versions over time.
+
+    BODS 0.4 **removed** the ``replacesStatements`` field (see the 0.4.0 changelog
+    "Removed" section); supersession is carried solely by the shared ``recordId``,
+    so this factory does not emit it.
     """
     record_id = stable_id(source_id, "relationship-record", local_id)
     if record_status == "new":
         statement_id = stable_id(source_id, "relationship", local_id)
-        replaced: list[str] | None = list(replaces_statements) if replaces_statements else None
     else:
         statement_id = stable_id(source_id, "relationship", local_id, record_status, publication_date or "")
-        replaced = (
-            list(replaces_statements)
-            if replaces_statements is not None
-            else [stable_id(source_id, "relationship", local_id)]
-        )
     statement: dict[str, Any] = {
         "statementId": statement_id,
         "recordId": record_id,
@@ -202,8 +199,6 @@ def make_relationship_statement(
         },
         "source": _source_block(source_id, source_url, source_description),
     }
-    if replaced:
-        statement["replacesStatements"] = replaced
     return statement
 
 

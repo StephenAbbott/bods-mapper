@@ -25,8 +25,10 @@ Highlights:
   descriptor in `interest.details`.
 - **Cessation lifecycle** — a ceased PSC produces a relationship with
   `recordStatus: "closed"` (stable `recordId`, distinct `statementId`,
-  `interest.endDate`, and `replacesStatements` → the original `new`), per the
-  BODS *Information updates* / *Record identifiers* modelling rules.
+  `interest.endDate`), per the BODS *Information updates* / *Record identifiers*
+  modelling rules. A record's versions are linked by their shared, stable
+  `recordId` — the `replacesStatements` field was removed in BODS 0.4 and is not
+  emitted.
 - **Robust country handling** — emits a BODS `Country` `code` only when a valid
   2-letter ISO code resolves (never an over-long value).
 

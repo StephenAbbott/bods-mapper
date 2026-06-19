@@ -10,11 +10,11 @@ carried in ``resource_uri`` (the PSC payload itself has no company number).
   * an ownership-or-control relationship statement.
 
 When the PSC carries ``ceased_on``, the relationship is emitted with
-``recordStatus: "closed"`` (interest ``endDate`` = ceased date,
-``replacesStatements`` -> the original ``new``) per the BODS Information-updates
-modelling rules. ``deleted`` events carry no ``data`` and yield an empty bundle;
-the calling service is responsible for closing the prior record from its own
-last-state map.
+``recordStatus: "closed"`` (interest ``endDate`` = ceased date), sharing the
+original statement's stable ``recordId`` — which is how BODS 0.4 links a record's
+versions (the ``replacesStatements`` field was removed in 0.4). ``deleted`` events
+carry no ``data`` and yield an empty bundle; the calling service is responsible
+for closing the prior record from its own last-state map.
 """
 
 from __future__ import annotations
@@ -128,7 +128,6 @@ def map_psc_event(
     source_id: str = "companies_house",
     stable_psc_id: str | None = None,
     record_status: str | None = None,
-    replaces_statement_id: str | None = None,
     end_date: str | None = None,
 ) -> BODSBundle:
     """Map one CH PSC stream event to a BODS bundle (entity + party + relationship).
@@ -143,7 +142,6 @@ def map_psc_event(
     * ``record_status`` — override the relationship's status ("updated" on a
       re-sighting, "closed" on a deletion). Defaults to "closed" when the event
       carries ``ceased_on``, else "new".
-    * ``replaces_statement_id`` — the prior statement this one supersedes.
     * ``end_date`` — interest end date for a deletion-driven close (when there's
       no ``ceased_on`` date).
     """
@@ -199,7 +197,6 @@ def map_psc_event(
             nominee_party_sid=entity_sid, nominator_party_sid=party["statementId"],
             descriptor=describe_nature(nominee_natures[0]) or nominee_natures[0],
             status=status, closure_date=closure_date, publication_date=publication_date,
-            replaces_statement_id=replaces_statement_id,
         )
         return result
 
@@ -233,7 +230,6 @@ def map_psc_event(
         source_url=url,
         publication_date=publication_date,
         record_status=status,
-        replaces_statements=[replaces_statement_id] if replaces_statement_id else None,
     )
     result.statements.append(rel)
     return result
@@ -252,7 +248,6 @@ def _add_nominee_arrangement(
     status: str,
     closure_date: str | None,
     publication_date: str | None,
-    replaces_statement_id: str | None,
 ) -> None:
     """Append the nomination arrangement entity + nominator/nominee relationships.
 
@@ -296,7 +291,6 @@ def _add_nominee_arrangement(
             source_url=url,
             publication_date=publication_date,
             record_status=status,
-            replaces_statements=[replaces_statement_id] if replaces_statement_id else None,
         )
     )
     # nominator = the PSC / beneficial owner on whose behalf the nominee holds.
