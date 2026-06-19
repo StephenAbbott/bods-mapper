@@ -40,7 +40,9 @@ def test_ceased_event_maps_to_closed_record():
     rel = [s for s in stmts if s["recordType"] == "relationship"][0]
     assert rel["recordStatus"] == "closed"
     assert rel["recordId"] != rel["statementId"]
-    assert rel["replacesStatements"]
+    # BODS 0.4 links a record's versions via the shared recordId; the removed
+    # replacesStatements field must not be emitted.
+    assert "replacesStatements" not in rel
     assert rel["recordDetails"]["interests"][0]["endDate"] == "2024-09-03"
     assert validate_shape(stmts) == []
 
@@ -99,7 +101,7 @@ def test_nominee_ceased_closes_both_relationships():
     for r in rels:
         assert r["recordStatus"] == "closed"
         assert r["recordDetails"]["interests"][0]["endDate"] == "2024-09-03"
-        assert r["replacesStatements"]
+        assert "replacesStatements" not in r
     assert validate_shape(stmts) == []
 
 
