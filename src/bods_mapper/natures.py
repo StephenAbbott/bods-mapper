@@ -58,9 +58,15 @@ def parse_nature(nature: str) -> dict[str, Any]:
             interest_type = mapped
             break
 
+    # ``directOrIndirect`` is "unknown", not "direct". Every PSC condition in
+    # Schedule 1A to the Companies Act 2006 is met by holding the interest
+    # "directly or indirectly", and the nature-of-control code does not say
+    # which: a registrable PSC may hold through a chain of entities that are
+    # not themselves registrable. BODS' modelling guidance says directness that
+    # is not known MUST be "unknown"; "direct" over-asserted it.
     entry: dict[str, Any] = {
         "type": interest_type,
-        "directOrIndirect": "direct",
+        "directOrIndirect": "unknown",
         "beneficialOwnershipOrControl": True,
         "details": describe_nature(nature) or nature,
     }

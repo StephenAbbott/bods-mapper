@@ -127,3 +127,19 @@ def test_corporate_psc_is_entity_to_entity():
     rel = [s for s in stmts if s["recordType"] == "relationship"][0]
     assert rel["recordDetails"]["interests"][0]["beneficialOwnershipOrControl"] is False
     assert validate_shape(stmts) == []
+
+
+def test_nature_of_control_interests_have_unknown_directness():
+    # PSC codes never say whether an interest is held directly or through
+    # intermediaries, so the mapping must not assert "direct".
+    natures = [
+        "ownership-of-shares-75-to-100-percent",
+        "voting-rights-25-to-50-percent",
+        "right-to-appoint-and-remove-directors",
+        "significant-influence-or-control",
+    ]
+    ev = _event("individual-person-with-significant-control", natures)
+    rel = list(map_psc_event(ev))[-1]
+    interests = rel["recordDetails"]["interests"]
+    assert len(interests) == len(natures)
+    assert {i["directOrIndirect"] for i in interests} == {"unknown"}
